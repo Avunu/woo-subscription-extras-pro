@@ -1,0 +1,143 @@
+# Copyright (C) 2020 WooCommerce Subscriptions Extras
+# This file is distributed under the same license as the WooCommerce Subscriptions Extras package.
+msgid ""
+msgstr ""
+"Project-Id-Version: WooCommerce Subscriptions Extras 1.0.22\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/woo-subscription-"
+"extras\n"
+"POT-Creation-Date: 2020-09-25 17:17:19+00:00\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"PO-Revision-Date: 2020-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+
+#: common/MHSettings.php:42
+msgid "Settings"
+msgstr ""
+
+#: common/MHSettings.php:149 common/MHSettings.php:338
+msgid "Save settings"
+msgstr ""
+
+#: common/MHSettings.php:152 common/MHSettings.php:341
+msgid "Reset all settings"
+msgstr ""
+
+#: common/MHSettings.php:184
+msgid "Get PRO"
+msgstr ""
+
+#: common/MHSettings.php:342
+msgid "Are you sure?"
+msgstr ""
+
+#: common/MHSettings.php:356
+msgid ""
+"If you liked this plugin, please help us <a href=\"%s\" target=\"_blank"
+"\">giving a 5-star rate</a> on WordPress.org :)"
+msgstr ""
+
+#: common/MHSettings.php:375
+msgid ""
+"You're using a limited version of %s. For more features and better support, "
+"please <a href='%s'>consider the premium version</a>."
+msgstr ""
+
+#: common/MHSettings.php:475
+msgid "Features included in PRO version"
+msgstr ""
+
+#: common/MHSettings.php:482
+msgid "Buy on Gumroad"
+msgstr ""
+
+#: wselite.php:27
+msgid "WooCommerce Subscription Extras"
+msgstr ""
+
+#: wselite.php:51
+msgid "Ask to change subscriptions prices when changed (on product save)"
+msgstr ""
+
+#: wselite.php:52 wselite.php:58 wselite.php:64
+msgid "General"
+msgstr ""
+
+#: wselite.php:57
+msgid ""
+"Ask to recalculate subscriptions when change shipping methods (on shipping "
+"settings tab)"
+msgstr ""
+
+#: wselite.php:63
+msgid "Ignore customer taxes in subscription prices"
+msgstr ""
+
+#: wselite.php:117
+msgid "A total of %d subscriptions have been updated successfully!"
+msgstr ""
+
+#: wselite.php:149
+msgid "Synchronize subscriptions prices with this product"
+msgstr ""
+
+#: wselite.php:150
+msgid "Synchronize prices"
+msgstr ""
+
+#: wselite.php:172
+msgid "Subscription start date"
+msgstr ""
+
+#: wselite.php:174
+msgid ""
+"When filled, this field will change the subscription date to future, instead "
+"of the default (current date)"
+msgstr ""
+
+#: wselite.php:479
+msgid "Looks like you have changed the shipping method settings."
+msgstr ""
+
+#: wselite.php:484 wselite.php:534
+msgid "This operation cannot be undone. Proceed anyway?"
+msgstr ""
+
+#: wselite.php:485
+msgid "Click here to recalculate %s subscriptions with this shipping now."
+msgstr ""
+
+#: wselite.php:517
+msgid ""
+"Looks like you have updated the price of the variation \"%s\" from %s to %s."
+msgstr ""
+
+#: wselite.php:525
+msgid "Looks like you have updated the price from %s to %s."
+msgstr ""
+
+#: wselite.php:535
+msgid "Click here to update current %s subscriptions prices now."
+msgstr ""
+
+#. Plugin Name of the plugin/theme
+msgid "WooCommerce Subscriptions Extras"
+msgstr ""
+
+#. Plugin URI of the plugin/theme
+msgid "https://wordpress.org/plugins/woo-subscription-extras"
+msgstr ""
+
+#. Description of the plugin/theme
+msgid "Extra features for WooCommerce Subscriptions Extension"
+msgstr ""
+
+#. Author of the plugin/theme
+msgid "Moises Heberle"
+msgstr ""
+
+#. Author URI of the plugin/theme
+msgid "https://pluggablesoft.com/contact"
+msgstr ""

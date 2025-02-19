@@ -1,0 +1,6 @@
+= Oct 14, 2020 =
+* Added "Next Payment" date for subscription products
+* Fixed session issue happening in specific WordPress installs
+
+= Sep 28, 2020 =
+* Added changelog history system
