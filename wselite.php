@@ -397,41 +397,61 @@ function wsextra_get_orders_to_update($args) {
 }
 
 function wsextra_update_subscription_order($order_id, $args = null) {
-    $order = wc_get_order( $order_id );
-    $order->set_prices_include_tax( 'yes' === get_option( 'woocommerce_prices_include_tax' ) );
+    try {
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            error_log(sprintf('[Subscription Extras] Order %d not found', $order_id));
+            return 0;
+        }
 
-	// emulate order customer to calculate correct shipping and taxes
-	$customer_id = $order->get_customer_id();
-	$customer = new WC_Customer($customer_id, false);
-	WC()->customer = $customer;
-	
-	if ( empty(WC()->session) ) {
-		WC()->initialize_session();
-	}
+        $order->set_prices_include_tax('yes' === get_option('woocommerce_prices_include_tax'));
 
-    foreach ( $order->get_items('tax') as $line_item ) {
-        wsextra_update_order_item_tax($order, $line_item);
+        // emulate order customer to calculate correct shipping and taxes
+        $customer_id = $order->get_customer_id();
+        $customer = new WC_Customer($customer_id, false);
+        WC()->customer = $customer;
+        
+        if (empty(WC()->session)) {
+            WC()->initialize_session();
+        }
+
+        $updated = false;
+
+        foreach ($order->get_items('tax') as $line_item) {
+            wsextra_update_order_item_tax($order, $line_item);
+        }
+
+        foreach ($order->get_items() as $line_item) {
+            // Only mark as updated if at least one product update succeeds
+            if (wsextra_update_order_item_product($order, $line_item) !== false) {
+                $updated = true;
+            }
+        }
+
+        foreach ($order->get_items('shipping') as $line_item) {
+            wsextra_update_order_item_shipping($order, $line_item);
+        }
+
+        $coupons = $order->get_coupons();
+
+        if (!empty($coupons)) {
+            $order->recalculate_coupons();
+        }
+        
+        $order->calculate_shipping();
+        $order->calculate_taxes();
+        $order->calculate_totals();    
+
+        return $updated ? 1 : 0;
+
+    } catch (Exception $e) {
+        error_log(sprintf(
+            '[Subscription Extras] Error processing order %d: %s',
+            $order_id,
+            $e->getMessage()
+        ));
+        return 0;
     }
-
-    foreach ( $order->get_items() as $line_item ) {
-        wsextra_update_order_item_product($order, $line_item);
-    }
-
-    foreach ( $order->get_items('shipping') as $line_item ) {
-        wsextra_update_order_item_shipping($order, $line_item);
-    }
-
-    $coupons = $order->get_coupons();
-
-    if ( !empty($coupons) ) {
-        $order->recalculate_coupons();
-    }
-    
-    $order->calculate_shipping();
-    $order->calculate_taxes();
-    $order->calculate_totals();    
-
-    return 1;
 }
 
 function wsextra_update_order_item_tax($order, $line_item) {
@@ -440,39 +460,72 @@ function wsextra_update_order_item_tax($order, $line_item) {
 }
 
 function wsextra_update_order_item_product($order, $line_item) {
-    $prodOrVariationId = $line_item->get_variation_id() > 0 ? $line_item->get_variation_id() : $line_item->get_product_id();
-    $product = wc_get_product( $prodOrVariationId );
-    $qty = $line_item->get_quantity();
+    try {
+        $prodOrVariationId = $line_item->get_variation_id() > 0 ? $line_item->get_variation_id() : $line_item->get_product_id();
+        $product = wc_get_product($prodOrVariationId);
 
-    // handle variable subscriptions
-    if ( $product instanceof WC_Product_Variable_Subscription ) {
-        $variations = $product->get_available_variations();
-
-        foreach ( $variations as $variation ) {
-            $variation_id = $variation['variation_id'];
-
-            if ( $line_item->get_variation_id() == $variation_id ) {
-                $price = ( $qty * $variation['display_price'] );
-            }
+        // Skip if product doesn't exist anymore
+        if (!$product) {
+            error_log(sprintf(
+                '[Subscription Extras] Product/Variation ID %d not found for order item %d in order %d - skipping price update',
+                $prodOrVariationId,
+                $line_item->get_id(),
+                $order->get_id()
+            ));
+            return false;
         }
-    }
-    else if ( wsextra_option('ignore_taxes') == 'yes' ) {
-        $price = wc_get_price_excluding_tax($product, array('qty' => $qty));
-    }
-    else {
-        // handle normal subscriptions
-        $price = $order->get_prices_include_tax() ?
-            wc_get_price_excluding_tax($product, array('qty' => $qty)) :
-            wc_get_price_including_tax($product, array('qty' => $qty));
-    }
 
-    $price = (float) $price;
+        $qty = $line_item->get_quantity();
 
-    $line_item->set_total( $price );
-    $line_item->set_subtotal( $price );
-    $line_item->save();
+        // handle variable subscriptions
+        if ($product instanceof WC_Product_Variable_Subscription) {
+            $variations = $product->get_available_variations();
+            $price = false;
 
-    return $product;
+            foreach ($variations as $variation) {
+                $variation_id = $variation['variation_id'];
+
+                if ($line_item->get_variation_id() == $variation_id) {
+                    $price = ($qty * $variation['display_price']);
+                    break;
+                }
+            }
+
+            // If no matching variation found, log and skip
+            if ($price === false) {
+                error_log(sprintf(
+                    '[Subscription Extras] No matching variation found for order item %d in order %d - skipping price update',
+                    $line_item->get_id(),
+                    $order->get_id()
+                ));
+                return false;
+            }
+        } else if (wsextra_option('ignore_taxes') == 'yes') {
+            $price = wc_get_price_excluding_tax($product, array('qty' => $qty));
+        } else {
+            // handle normal subscriptions
+            $price = $order->get_prices_include_tax() ?
+                wc_get_price_excluding_tax($product, array('qty' => $qty)) :
+                wc_get_price_including_tax($product, array('qty' => $qty));
+        }
+
+        $price = (float) $price;
+
+        $line_item->set_total($price);
+        $line_item->set_subtotal($price);
+        $line_item->save();
+
+        return $product;
+
+    } catch (Exception $e) {
+        error_log(sprintf(
+            '[Subscription Extras] Error updating order item %d in order %d: %s',
+            $line_item->get_id(),
+            $order->get_id(),
+            $e->getMessage()
+        ));
+        return false;
+    }
 }
 
 function wsextra_update_order_item_shipping($order, $line_item) {
