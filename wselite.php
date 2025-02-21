@@ -409,7 +409,7 @@ function wsextra_get_orders_to_update($args)
     return $orders;
 }
 
-function wsextra_update_subscription_order(int $order_id, ?array $args = null): int 
+function wsextra_update_subscription_order(int $order_id, ?array $args = null, ?bool $fix_variations = false): int
 {
     try {
         $order = wc_get_order($order_id) ?? throw new Exception("Order not found");
@@ -429,15 +429,10 @@ function wsextra_update_subscription_order(int $order_id, ?array $args = null): 
         // Force clear cached shipping methods 
         if (method_exists($order, 'remove_order_items')) {
             $order->remove_order_items('shipping');
-            error_log('[WSE Debug] Removed existing shipping items');
         }
 
         // Debug shipping methods before calculation
         $shipping_methods = $order->get_shipping_methods();
-        error_log(sprintf(
-            '[WSE Debug] Shipping methods before calculation: %s',
-            print_r($shipping_methods, true)
-        ));
 
         // Reset shipping totals
         $order->set_shipping_total(0);
@@ -445,123 +440,66 @@ function wsextra_update_subscription_order(int $order_id, ?array $args = null): 
 
         $updated = false;
 
+        // remove all fees
+        foreach ($order->get_fees() as $fee) {
+            $order->remove_item($fee->get_id());
+        }
+
         // Process tax and product updates first
         foreach ($order->get_items('tax') as $line_item) {
             wsextra_update_order_item_tax($order, $line_item);
         }
 
         foreach ($order->get_items() as $line_item) {
-            $updated = wsextra_update_order_item_product($order, $line_item) !== false || $updated;
+            $updated = wsextra_update_order_item_product($order, $line_item, $fix_variations) !== false || $updated;
         }
 
-        // Debug before shipping calculation
-        error_log('[WSE Debug] About to calculate shipping...');
-
-        // Calculate shipping and track each step
-        $shipping_total = 0;
-        foreach ($order->get_shipping_methods() as $shipping) {
-            $method_total = (float) $shipping->get_total();
-            error_log(sprintf(
-                '[WSE Debug] Shipping method %s total: %f',
-                $shipping->get_method_id(),
-                $method_total
-            ));
-            $shipping_total += $method_total;
-        }
-
-        $order->set_shipping_total($shipping_total);
-        error_log(sprintf('[WSE Debug] Set shipping total to: %f', $shipping_total));
-
-        // Debug order subtotal
-        $subtotal = $order->get_subtotal();
-        error_log(sprintf('[WSE Debug] Order subtotal: %f', $subtotal));
-
-        // Get shipping zone and methods
+        // Get shipping zone and available methods
         $shipping_zone = WC_Shipping_Zones::get_zone_matching_package([
             'destination' => [
                 'country' => $order->get_shipping_country(),
                 'state' => $order->get_shipping_state(),
                 'postcode' => $order->get_shipping_postcode(),
-            ],
-            'contents' => $order->get_items()
+            ]
         ]);
 
-        error_log(sprintf('[WSE Debug] Found shipping zone: %s', $shipping_zone->get_zone_name()));
-
-        // Get available shipping methods from zone
         $shipping_methods = $shipping_zone->get_shipping_methods(true);
-        // error_log(sprintf(
-        //     '[WSE Debug] Available shipping methods: %s',
-        //     print_r($shipping_methods, true)
-        // ));
+        $subtotal = $order->get_subtotal();
 
-        // Try to ensure we have shipping methods if none exist
+        // Check free shipping first
+        foreach ($shipping_methods as $method) {
+            if ($method instanceof WC_Shipping_Free_Shipping) {
+                $min_amount = (float)$method->get_option('min_amount', 0);
+                if ($min_amount === 0 || $subtotal >= $min_amount) {
+                    $item = new WC_Order_Item_Shipping();
+                    $item->set_props([
+                        'method_title' => $method->get_title(),
+                        'method_id' => $method->id,
+                        'instance_id' => $method->get_instance_id(),
+                        'total' => 0,
+                        'taxes' => []
+                    ]);
+                    $order->add_item($item);
+                    break;
+                }
+            }
+        }
+
+        // If no free shipping was added, use flat rate
         if (empty($order->get_shipping_methods())) {
-            error_log('[WSE Debug] No shipping methods found, evaluating conditions...');
-
-            // Format package for WAS shipping calculation 
-            $package = [
-                'contents' => array_map(function($item) {
-                    $product = $item->get_product();
-                    return [
-                        'data' => $product,
-                        'quantity' => $item->get_quantity(),
-                        'line_total' => $item->get_total(),
-                        'line_tax' => $item->get_total_tax(),
-                        'line_subtotal' => $item->get_subtotal(),
-                        'line_subtotal_tax' => $item->get_subtotal_tax(),
-                        'product_id' => $item->get_product_id(),
-                        'variation_id' => $item->get_variation_id(),
-                    ];
-                }, $order->get_items()),
-                'destination' => [
-                    'country' => $order->get_shipping_country(),
-                    'state' => $order->get_shipping_state(),
-                    'postcode' => $order->get_shipping_postcode(),
-                    'city' => $order->get_shipping_city(),
-                    'address' => $order->get_shipping_address_1(),
-                    'address_2' => $order->get_shipping_address_2(),
-                ],
-                'contents_cost' => $order->get_subtotal(),
-                'applied_coupons' => array_map(function($coupon) {
-                    return $coupon->get_code(); 
-                }, $order->get_coupons()),
-                'user' => ['ID' => $order->get_customer_id()],
-                'cart_subtotal' => $order->get_subtotal()
-            ];
-
-            // Get shipping methods for package
-            $shipping_methods = WC()->shipping()->load_shipping_methods($package);
-
             foreach ($shipping_methods as $method) {
-                if ($method instanceof WAS_Advanced_Shipping_Method) {
-                    error_log(sprintf('[WSE Debug] Calculating shipping for WAS method: %s', $method->id));
-                    
-                    // This will internally match conditions and add rates
-                    $method->calculate_shipping($package);
-                    
-                    // Get any rates added by the method
-                    $rates = $method->get_rates_for_package($package);
-                    
-                    error_log(sprintf('[WSE Debug] Found %d rates', count($rates)));
-
-                    foreach ($rates as $rate) {
-                        $item = new WC_Order_Item_Shipping();
-                        $item->set_props([
-                            'method_title' => $rate->get_label(),
-                            'method_id' => $rate->get_method_id(),
-                            'instance_id' => $rate->get_instance_id(),
-                            'total' => $rate->get_cost(),
-                            'taxes' => $rate->get_taxes(),
-                        ]);
-                        
-                        $order->add_item($item);
-                        error_log(sprintf('[WSE Debug] Added shipping method %s with cost %f',
-                            $rate->get_label(), 
-                            $rate->get_cost()
-                        ));
-                        break; // Only add first matching rate
-                    }
+                if ($method instanceof WC_Shipping_Flat_Rate) {
+                    $cost = (float)$method->get_option('cost', 0);
+                    $item = new WC_Order_Item_Shipping();
+                    $item->set_props([
+                        'method_title' => $method->get_title(),
+                        'method_id' => $method->id,
+                        'instance_id' => $method->get_instance_id(),
+                        'total' => $cost,
+                        'taxes' => []
+                    ]);
+                    $order->add_item($item);
+                    break;
                 }
             }
         }
@@ -569,8 +507,6 @@ function wsextra_update_subscription_order(int $order_id, ?array $args = null): 
         // Calculate final totals
         $order->calculate_totals(false);
         $order->save();
-
-        error_log(sprintf('[WSE Debug] Final shipping total: %f', $order->get_shipping_total()));
 
         return (int)$updated;
     } catch (Exception $e) {
@@ -589,16 +525,99 @@ function wsextra_update_order_item_tax($order, $line_item)
     $line_item->save();
 }
 
-function wsextra_update_order_item_product($order, $line_item)
+function wsextra_match_variation_by_attributes($product, $line_item)
+{
+    error_log(sprintf(
+        '[WSE Debug] Matching variation for product %d line item %d',
+        $product->get_id(),
+        $line_item->get_id()
+    ));
+
+    // Get variation attributes from line item meta
+    $variation_data = [];
+    foreach ($line_item->get_meta_data() as $meta) {
+        if (strpos($meta->key, 'pa_') === 0 || strpos($meta->key, 'attribute_') === 0) {
+            $key = strpos($meta->key, 'pa_') === 0 ? 'attribute_' . $meta->key : $meta->key;
+            $patterns = [
+                '/80pk/i' => '80-pack',
+                '/coffee|whole/i' => '',
+                '/\s+/i' => '-',
+                '/-+/' => '-'
+            ];
+
+            $value = strtolower($meta->value);
+            foreach ($patterns as $pattern => $replacement) {
+                $value = trim(preg_replace($pattern, $replacement, $value));
+            }
+
+            $variation_data[$key] = $value;
+            error_log(sprintf(
+                '[WSE Debug] Found variation attribute %s = %s',
+                $key,
+                $meta->value
+            ));
+        }
+    }
+
+    if (empty($variation_data)) {
+        error_log('[WSE Debug] No variation attributes found in line item');
+        return null;
+    }
+
+    error_log(sprintf(
+        '[WSE Debug] Looking for variation with attributes: %s',
+        print_r($variation_data, true)
+    ));
+
+    // Get all variations
+    $data_store = WC_Data_Store::load('product');
+    $variation_id = $data_store->find_matching_product_variation($product, $variation_data);
+
+    if ($variation_id) {
+        error_log(sprintf('[WSE Debug] Found matching variation ID: %d', $variation_id));
+    } else {
+        error_log('[WSE Debug] No matching variation found');
+    }
+
+    return $variation_id ?: null;
+}
+
+function wsextra_update_order_item_product($order, $line_item, $fix_variations)
 {
     try {
-        $prodOrVariationId = $line_item->get_variation_id() > 0 ? $line_item->get_variation_id() : $line_item->get_product_id();
-        $product = wc_get_product($prodOrVariationId);
-
-        // Skip if product doesn't exist anymore
-        if (!$product) {
-            error_log(sprintf('[WSE Debug] Product/Variation ID %d not found', $prodOrVariationId));
+        $variation_id = $line_item->get_variation_id();
+        error_log(sprintf('[WSE Debug] Variation ID: %d', $variation_id));
+        $product_id = $line_item->get_product_id();
+        if (!$product_id) {
+            error_log(sprintf('[WSE Debug] Invalid product ID for order item %d', $line_item->get_id()));
             return false;
+        }
+
+        if (!$variation_id) {
+            $product = wc_get_product($product_id);
+            // if it's not a valid product, log and exit
+            if (!$product) {
+                error_log(sprintf('[WSE Debug] Invalid product ID %d for order item %d', $product_id, $line_item->get_id()));
+                return false;
+            }
+        }
+
+        if ($fix_variations && $product->is_type('variable')) {
+            // Check if variation_id exists and is valid, otherwise try to match
+            $matched_variation_id = null;
+            if (!$variation_id || !in_array($variation_id, get_all_variations($product_id))) {
+                error_log(sprintf('[WSE Debug] Variation ID %d is not valid', $variation_id));
+                $matched_variation_id = wsextra_match_variation_by_attributes($product, $line_item);
+            }
+            if ($matched_variation_id) {
+                $variation_id = $matched_variation_id;
+                $line_item->set_variation_id($variation_id);
+                $line_item->save();
+            }
+        }
+
+        if ($variation_id) {
+            $product = wc_get_product($variation_id);
         }
 
         $qty = $line_item->get_quantity();
@@ -643,11 +662,9 @@ function wsextra_update_order_item_product($order, $line_item)
 
                 $original_price = WCS_ATT_Product_Prices::get_price($product, $scheme_key, 'edit');
             } else {
-                error_log(sprintf('[WSE Debug] No suitable scheme found for product %d', $prodOrVariationId));
                 $base_price = $product->get_price();
             }
         } else {
-            error_log('[WSE Debug] WCS_ATT_Product_Schemes class not found');
             $base_price = $product->get_price();
         }
 
@@ -677,12 +694,29 @@ function wsextra_update_order_item_product($order, $line_item)
         return true;
     } catch (Exception $e) {
         error_log(sprintf(
-            '[WSE Debug] Error updating order item %d: %s',
+            '[Subscription Extras] Error updating order item %d: %s',
             $line_item->get_id(),
             $e->getMessage()
         ));
         return false;
     }
+}
+
+function get_all_variations($product_id)
+{
+    global $wpdb;
+
+    $query = "
+        SELECT ID
+        FROM {$wpdb->posts}
+        WHERE post_parent = %d
+        AND post_type = 'product_variation'
+        AND post_status = 'publish'
+    ";
+
+    $variation_ids = $wpdb->get_col($wpdb->prepare($query, $product_id));
+
+    return $variation_ids;
 }
 
 function wsextra_update_order_item_shipping($order, $line_item)

@@ -1,3 +1,8 @@
+= Feb, 21, 2025 =
+* Feat: integrate with All Products for WooCommerce Subscriptions
+* Feat: re-calculate shipping cost for subscription products (only WooCommerce core shipping methods)
+* Feat: add an option to try to repair broken variations.
+
 = Oct 14, 2020 =
 * Added "Next Payment" date for subscription products
 * Fixed session issue happening in specific WordPress installs
