@@ -589,7 +589,7 @@ function wsextra_update_order_item_product($order, $line_item, $fix_variations)
         error_log(sprintf('[WSE Debug] Variation ID: %d', $variation_id));
         $product_id = $line_item->get_product_id();
         if (!$product_id) {
-            error_log(sprintf('[WSE Debug] Invalid product ID for order item %d', $line_item->get_id()));
+            error_log(sprintf('[WSE Debug] Invalid product ID %d for order item %d', $product_id, $line_item->get_id()));
             return false;
         }
 
