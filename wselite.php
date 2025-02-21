@@ -595,29 +595,33 @@ function wsextra_update_order_item_product($order, $line_item, $fix_variations)
 
         if (!$variation_id) {
             $product = wc_get_product($product_id);
-            // if it's not a valid product, log and exit
-            if (!$product) {
-                error_log(sprintf('[WSE Debug] Invalid product ID %d for order item %d', $product_id, $line_item->get_id()));
-                return false;
-            }
         }
 
-        if ($fix_variations && $product->is_type('variable')) {
-            // Check if variation_id exists and is valid, otherwise try to match
-            $matched_variation_id = null;
-            if (!$variation_id || !in_array($variation_id, get_all_variations($product_id))) {
-                error_log(sprintf('[WSE Debug] Variation ID %d is not valid', $variation_id));
-                $matched_variation_id = wsextra_match_variation_by_attributes($product, $line_item);
-            }
-            if ($matched_variation_id) {
-                $variation_id = $matched_variation_id;
-                $line_item->set_variation_id($variation_id);
-                $line_item->save();
+        if ($variation_id && $fix_variations) {
+            $product = wc_get_product($product_id);
+            if ($product->is_type('variable')) {
+                // Check if variation_id exists and is valid, otherwise try to match
+                $matched_variation_id = null;
+                if (!$variation_id || !in_array($variation_id, get_all_variations($product_id))) {
+                    error_log(sprintf('[WSE Debug] Variation ID %d is not valid', $variation_id));
+                    $matched_variation_id = wsextra_match_variation_by_attributes($product, $line_item);
+                }
+                if ($matched_variation_id) {
+                    $variation_id = $matched_variation_id;
+                    $line_item->set_variation_id($variation_id);
+                    $line_item->save();
+                }
             }
         }
 
         if ($variation_id) {
             $product = wc_get_product($variation_id);
+        }
+
+        // if it's not a valid product, log and exit
+        if (!$product) {
+            error_log(sprintf('[WSE Debug] Invalid product ID %d for order item %d', $product_id, $line_item->get_id()));
+            return false;
         }
 
         $qty = $line_item->get_quantity();
