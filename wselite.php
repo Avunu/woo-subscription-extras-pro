@@ -597,7 +597,7 @@ function wsextra_update_order_item_product($order, $line_item, $fix_variations)
             $product = wc_get_product($product_id);
         }
 
-        if ($variation_id && $fix_variations) {
+        if (!$variation_id && $fix_variations) {
             $product = wc_get_product($product_id);
             if ($product->is_type('variable')) {
                 // Check if variation_id exists and is valid, otherwise try to match
