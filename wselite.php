@@ -626,7 +626,7 @@ function wsextra_update_order_item_product($order, $line_item, $fix_variations)
 
         $qty = $line_item->get_quantity();
 
-        $original_price = $product->get_price();
+        $original_price = $product->get_regular_price();
 
         // Since we're in a subscription, we know we need a scheme
         if (class_exists('WCS_ATT_Product_Schemes')) {
@@ -664,7 +664,7 @@ function wsextra_update_order_item_product($order, $line_item, $fix_variations)
                 // Get price with the discount applied
                 $base_price = $product->get_price();
 
-                $original_price = WCS_ATT_Product_Prices::get_price($product, $scheme_key, 'edit');
+                // $original_price = WCS_ATT_Product_Prices::get_price($product, $scheme_key, 'edit');
             } else {
                 $base_price = $product->get_price();
             }
